@@ -8,10 +8,7 @@ import requests
 
 # --- Configuration ---
 GDB_PORT = 26000
-# IMPORTANT: This command is now set to the specific cross-compiler GDB name 
-# that should be available after running 'brew install x86_64-elf-gdb'.
 GDB_COMMAND = "x86_64-elf-gdb" 
-# Get API key from environment variable
 API_KEY = os.getenv('GEMINI_API_KEY', '')
 if not API_KEY:
     print("ERROR: Please set GEMINI_API_KEY environment variable")
@@ -36,6 +33,17 @@ def get_gemini_analysis(prompt, debug_data):
     user_query = (
         "Analyze the following xv6 kernel panic state caused by a Trap (Page Fault). "
         "The breakpoint hit was at vectors.S:56 (the trap handler entry).\n\n"
+        "You have been provided with:\n"
+        "1. The backtrace showing the call stack\n"
+        "2. CPU register dump (including CR2 which shows the faulting address)\n"
+        "3. The saved return address showing WHERE the bad call came from\n"
+        "4. Source code at the calling site\n"
+        "5. Disassembly showing the exact instruction that made the bad call\n\n"
+        "Based on this information:\n"
+        "1. Identify the EXACT function and line of code that caused the fault\n"
+        "2. Explain WHY this specific code caused the crash\n"
+        "3. Provide a SPECIFIC patch with the exact file name and line number\n"
+        "4. The patch should be in unified diff format if possible\n\n"
         "--- Captured Debug Data ---\n"
         f"{debug_data}"
     )
@@ -49,11 +57,13 @@ def get_gemini_analysis(prompt, debug_data):
                 "type": "OBJECT",
                 "properties": {
                     "rootCause": {"type": "STRING", "description": "The specific technical reason for the fault."},
+                    "faultyFunction": {"type": "STRING", "description": "The exact function name and file that contains the bug."},
+                    "faultyLine": {"type": "STRING", "description": "The specific line number or code snippet that caused the fault."},
                     "severity": {"type": "STRING", "description": "High, Medium, or Low."},
                     "analysisSummary": {"type": "STRING", "description": "A concise explanation of how the captured state points to the root cause."},
-                    "suggestedFixPatch": {"type": "STRING", "description": "The suggested C or Assembly code patch to resolve the issue."},
+                    "suggestedFixPatch": {"type": "STRING", "description": "A unified diff format patch or specific code changes with file names and line numbers."},
                 },
-                "required": ["rootCause", "severity", "analysisSummary", "suggestedFixPatch"]
+                "required": ["rootCause", "faultyFunction", "faultyLine", "severity", "analysisSummary", "suggestedFixPatch"]
             }
         },
     }
@@ -139,7 +149,7 @@ def run_debugger():
         print("Connecting to remote target...")
         gdb.sendline(f"target remote localhost:{GDB_PORT}")
         
-        # Wait for the connection confirmation or the GDB prompt (more flexible)
+        # Wait for the connection confirmation or the GDB prompt
         connection_patterns = [
             r"Remote debugging using localhost", # Successful connection message
             r"\(gdb\)",                         # The prompt after connection
@@ -198,11 +208,11 @@ def run_debugger():
         index = gdb.expect(breakpoint_patterns, timeout=20)
         
         if index == 2:  # TIMEOUT
-            print("⚠️ Breakpoint was not hit within timeout.")
+            print("Breakpoint was not hit within timeout.")
             print("GDB output:", gdb.before)
             raise Exception("trap_test did not trigger expected page fault")
         
-        print("✅ GDB HIT BREAKPOINT at vectors.S:56!")
+        print("GDB HIT BREAKPOINT at vectors.S:56!")
         
         # After breakpoint is hit, we need to wait for GDB to actually show the prompt
         # The breakpoint message is displayed, but we need to see "(gdb)" 
@@ -224,11 +234,11 @@ def run_debugger():
             backtrace_text = "\n".join([line for line in backtrace_lines if line.strip() and not line.strip() == "bt"]).strip()
             print(f"✓ Backtrace captured ({len(backtrace_text)} chars)")
         elif index == 1:  # EOF
-            print("❌ GDB process died (EOF)")
+            print("GDB process died (EOF)")
             print("Last buffer:", gdb.before)
             raise Exception("GDB process terminated unexpectedly")
         else:  # TIMEOUT
-            print("❌ TIMEOUT while waiting for backtrace GDB prompt")
+            print("TIMEOUT while waiting for backtrace GDB prompt")
             print("GDB buffer content:", gdb.before if hasattr(gdb, 'before') else "N/A")
             print("GDB is alive?", gdb.isalive())
             raise Exception("Timeout waiting for GDB backtrace")
@@ -242,14 +252,92 @@ def run_debugger():
             registers_text = "\n".join([line for line in register_lines if line.strip() and not line.strip() == "info registers"]).strip()
             print(f"✓ Registers captured ({len(registers_text)} chars)")
         elif index == 1:  # EOF
-            print("❌ GDB process died while capturing registers (EOF)")
+            print("GDB process died while capturing registers (EOF)")
             raise Exception("GDB process terminated unexpectedly")
         else:  # TIMEOUT
-            print("❌ TIMEOUT while waiting for registers")
+            print("TIMEOUT while waiting for registers")
             print("GDB buffer:", gdb.before if hasattr(gdb, 'before') else "N/A")
             raise Exception("Timeout waiting for GDB registers")
+        
+        # Capture source code context from the crash location
+        print("Capturing source code context...")
+        
+        # The backtrace shows frame 0 is vector14, frame 1 is 0x0
+        # We need to find what CALLED the function that ended up at 0x0
+        # Look at the saved RIP to find the real calling function
+        
+        # Get the saved return address from the stack frame
+        gdb.sendline("x/1xg $rsp")  # Examine the return address on stack
+        gdb.expect_exact("(gdb)", timeout=5)
+        stack_dump = gdb.before.strip()
+        
+        # Try to get info about the saved RIP
+        gdb.sendline("info frame 1")
+        gdb.expect_exact("(gdb)", timeout=5)
+        frame_info = gdb.before.strip()
+        
+        # Extract the saved RIP address and find what function it belongs to
+        gdb.sendline("frame 1")
+        gdb.expect_exact("(gdb)", timeout=5)
+        
+        gdb.sendline("x/10i $rsp-40")  # Disassemble before the saved RIP
+        gdb.expect_exact("(gdb)", timeout=5)
+        disassembly_before = gdb.before.strip()
+        
+        # Try to find the calling function by examining saved RIP
+        # The "saved rip" from info frame tells us where we came from
+        import re
+        saved_rip_match = re.search(r'saved rip = (0x[0-9a-f]+)', frame_info)
+        if saved_rip_match:
+            saved_rip = saved_rip_match.group(1)
+            print(f"Found calling address: {saved_rip}")
+            
+            # Find what function contains this address
+            gdb.sendline(f"info symbol {saved_rip}")
+            gdb.expect_exact("(gdb)", timeout=5)
+            caller_symbol = gdb.before.strip()
+            
+            # Now list the source code at that address
+            gdb.sendline(f"list *{saved_rip}")
+            gdb.expect_exact("(gdb)", timeout=5)
+            source_context = gdb.before.strip()
+            
+            # Get more context around the calling function
+            gdb.sendline(f"disassemble {saved_rip}")
+            gdb.expect_exact("(gdb)", timeout=5)
+            caller_disassembly = gdb.before.strip()
+        else:
+            source_context = "Could not extract saved RIP"
+            caller_symbol = "Unknown"
+            caller_disassembly = "N/A"
+        
+        # Go back to frame 0 for safety
+        gdb.sendline("frame 0")
+        gdb.expect_exact("(gdb)", timeout=5)
+        
+        print(f"✓ Source context captured - Caller: {caller_symbol}")
 
-        debug_data = f"BACKTRACE:\n{backtrace_text}\n\nREGISTERS:\n{registers_text}"
+        debug_data = f"""BACKTRACE:
+{backtrace_text}
+
+REGISTERS:
+{registers_text}
+
+SAVED RETURN ADDRESS INFO:
+{frame_info}
+
+CALLING FUNCTION:
+{caller_symbol}
+
+SOURCE CODE AT CALLING SITE:
+{source_context}
+
+DISASSEMBLY OF CALLING FUNCTION:
+{caller_disassembly}
+
+STACK ANALYSIS:
+{stack_dump}
+"""
         print("\n--- Captured Debug Data ---")
         print(debug_data)
         
@@ -262,15 +350,28 @@ def run_debugger():
         print("="*80)
         
         if "error" in analysis:
-            print(f"❌ Analysis failed: {analysis['error']}")
+            print(f"Analysis failed: {analysis['error']}")
             print("\nEnsure your API Key is valid and the model is accessible.")
         else:
             print(f"Root Cause: {analysis['rootCause']}")
+            print(f"Faulty Function: {analysis['faultyFunction']}")
+            print(f"Faulty Line: {analysis['faultyLine']}")
             print(f"Severity: {analysis['severity']}")
             print("\nAnalysis Summary:")
             print(analysis['analysisSummary'])
             print("\nSuggested Fix/Patch:")
             print(analysis['suggestedFixPatch'])
+            
+            # Save the patch to a file
+            patch_filename = "suggested_fix.patch"
+            with open(patch_filename, 'w') as f:
+                f.write(f"# AI-Generated Patch for xv6 Kernel Panic\n")
+                f.write(f"# Root Cause: {analysis['rootCause']}\n")
+                f.write(f"# Faulty Function: {analysis['faultyFunction']}\n")
+                f.write(f"# Faulty Line: {analysis['faultyLine']}\n")
+                f.write(f"# Severity: {analysis['severity']}\n\n")
+                f.write(analysis['suggestedFixPatch'])
+            print(f"\n✓ Patch saved to: {patch_filename}")
             
             if sources:
                 print("\nSources used for grounding:")
@@ -278,12 +379,12 @@ def run_debugger():
                     print(f"- {s['title']}: {s['uri']}")
 
     except pexpect.exceptions.EOF:
-        print("\n❌ QEMU/GDB closed unexpectedly. This may indicate a problem with the GDB or QEMU processes.")
+        print("\nQEMU/GDB closed unexpectedly. This may indicate a problem with the GDB or QEMU processes.")
         if gdb:
             print("Last GDB output:")
             print(gdb.before if gdb.before else "(no output)")
     except pexpect.exceptions.TIMEOUT as e:
-        print(f"\n❌ TIMEOUT occurred. The script failed to synchronize with GDB/QEMU.")
+        print(f"\nTIMEOUT occurred. The script failed to synchronize with GDB/QEMU.")
         print("\nLast GDB output:")
         if gdb:
             print(gdb.before if gdb.before else "(no output)")
@@ -291,7 +392,7 @@ def run_debugger():
         if qemu:
             print(qemu.before if qemu.before else "(no output)")
     except Exception as e:
-        print(f"\n❌ An unexpected error occurred: {e}")
+        print(f"\nAn unexpected error occurred: {e}")
         import traceback
         traceback.print_exc()
     finally:
