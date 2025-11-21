@@ -87,3 +87,16 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+addr_t sys_triggerpanic(void)
+{
+  cprintf("Kernel: Attempting to trigger controlled panic by dereferencing NULL...\n");
+  // The line that causes the page fault
+  int *p = (int *)0;
+  volatile int val = *p; // Use volatile to ensure compiler doesn't optimize it away
+  
+  // This line should never be reached in the controlled panic test:
+  cprintf("Kernel: Should not reach here. Value: %d\n", val);
+  return 0; // Returns addr_t (which is fine for returning 0)
+}
+
