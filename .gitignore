@@ -1,23 +1,42 @@
-*~
-_*
+# Virtual Environment
+.venv/
+venv/
+env/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# xv6 build artifacts
 *.o
 *.d
 *.asm
 *.sym
-*.img
-fmt/*
-tags
-vectors.S
+xv6.img
+fs.img
 bootblock
-entryother
-initcode
-initcode.out
 kernel
-kernelmemfs
-mkfs
-.gdbinit
-.gdb_history
-.depend
-.history/
+vectors.S
+
+# IDE
 .vscode/
-cscope.out
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+qemu_output.log
+
+# API Keys (IMPORTANT!)
+.env
+*.key
+
+# OS
+.DS_Store
+Thumbs.db
