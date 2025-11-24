@@ -299,8 +299,8 @@ MIT License - See LICENSE file for details
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/xv6-ai-debugger/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/xv6-ai-debugger/discussions)
+- **Issues**: [GitHub Issues](https://github.com/cheeseburger9309/xv6-ai-debugger/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/cheeseburger9309/xv6-ai-debugger/discussions)
 
 ---
 
