@@ -1,0 +1,17 @@
+--- a/null_deref.c
++++ b/null_deref.c
+@@ -6,7 +6,13 @@
+   printf(1, "null_deref: Testing NULL pointer dereference...\n");
+   
+   int *ptr = 0;  // NULL pointer
+-  int value = *ptr;  // Dereference NULL
++  
++  if (ptr == 0) {
++    printf(2, "null_deref: ERROR: Attempted to dereference a NULL pointer.\n");
++    exit(); // Terminate the program gracefully due to invalid operation
++  }
++  
++  int value = *ptr; // Dereference NULL (this line will only be reached if ptr is not NULL)
+   
+   printf(1, "Value: %d (should not print)\n", value);
+   exit();

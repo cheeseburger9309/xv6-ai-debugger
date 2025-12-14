@@ -118,7 +118,8 @@ mkfs: mkfs.c fs.h
 
 UPROGS= \
 	_cat _echo _forktest _grep _init _kill _ln _ls _mkdir \
-	_rm _sh _stressfs _usertests _wc _zombie \
+	_rm _sh _stressfs _usertests _wc _zombie _trap_test _user_crash _null_deref \
+	_invalid_pointer _invalid_instruction \
 #
 
 fs.img: mkfs README $(UPROGS)
@@ -187,6 +188,7 @@ qemu-nox-gdb: fs.img xv6.img .gdbinit
 EXTRA=\
 	mkfs.c ulib.c user.h cat.c echo.c forktest.c grep.c kill.c\
 	ln.c ls.c mkdir.c rm.c stressfs.c usertests.c wc.c zombie.c\
+        trap_test.c\
 	printf.c umalloc.c\
 	README *.pl toc.* runoff runoff1 runoff.list\
 	.gdbinit.tmpl
