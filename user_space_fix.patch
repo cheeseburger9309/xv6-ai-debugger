@@ -1,23 +1,17 @@
---- a/user_crash.c
-+++ b/user_crash.c
-@@ -11,7 +11,13 @@
- 
-   // Use inline assembly to prevent compiler from optimizing this away
-   // equivalent to: z = x / y;
--  asm volatile("div %2" 
--               : "=a" (z) 
--               : "a" (x), "r" (y) 
--               : "rdx"); 
-+  if (y == 0) {
-+    // Handle division by zero error
-+    printf("Error: Division by zero is not allowed.\n");
-+    exit(1);
-+  } else {
-+    asm volatile("div %2" 
-+                 : "=a" (z) 
-+                 : "a" (x), "r" (y) 
-+                 : "rdx"); 
+--- a/null_deref.c
++++ b/null_deref.c
+@@ -6,7 +6,13 @@
+   printf(1, "null_deref: Testing NULL pointer dereference...\n");
+   
+   int *ptr = 0;  // NULL pointer
+-  int value = *ptr;  // Dereference NULL
++  
++  if (ptr == 0) {
++    printf(2, "null_deref: ERROR: Attempted to dereference a NULL pointer.\n");
++    exit(); // Terminate the program gracefully due to invalid operation
 +  }
- 
-   printf("Result of division: %d\n", z);
-   exit(0);
++  
++  int value = *ptr; // Dereference NULL (this line will only be reached if ptr is not NULL)
+   
+   printf(1, "Value: %d (should not print)\n", value);
+   exit();

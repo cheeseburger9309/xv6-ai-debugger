@@ -7,6 +7,7 @@ import json
 import requests
 import re
 import argparse
+import random
 
 # --- Configuration ---
 GDB_PORT = 26000
@@ -19,6 +20,33 @@ if not API_KEY:
     sys.exit(1)
 
 API_URL_BASE = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+
+# --- Test Programs Configuration ---
+KERNEL_TESTS = {
+    "trap_test": {
+        "description": "NULL pointer dereference in kernel space",
+        "expected_trap": "Page Fault (vector 14)"
+    }
+}
+
+USER_TESTS = {
+    "user_crash": {
+        "description": "Division by zero",
+        "expected_trap": "Divide Error (trap 0)"
+    },
+    "null_deref": {
+        "description": "NULL pointer dereference",
+        "expected_trap": "Page Fault (trap 14)"
+    },
+    "invalid_pointer": {
+        "description": "Invalid memory address access",
+        "expected_trap": "Page Fault (trap 14)"
+    },
+    "invalid_instruction": {
+        "description": "Invalid/undefined instruction",
+        "expected_trap": "Invalid Opcode (trap 6)"
+    }
+}
 
 # --- LLM API Helpers ---
 
@@ -159,9 +187,11 @@ def get_gemini_analysis(debug_data, mode="kernel"):
 
 # --- Debugger Core Logic ---
 
-def run_kernel_debugger(gdb, qemu):
+def run_kernel_debugger(gdb, qemu, test_program="trap_test"):
     """Handles kernel-space crash debugging with GDB automation"""
-    print("\n--- Running in KERNEL PANIC MODE ---")
+    print(f"\n--- Running in KERNEL PANIC MODE ---")
+    print(f"Test Program: {test_program}")
+    print(f"Description: {KERNEL_TESTS[test_program]['description']}")
     
     # Set breakpoint at kernel fault handler
     print("Setting breakpoint at vectors.S:56 (Page Fault Handler)...")
@@ -179,9 +209,9 @@ def run_kernel_debugger(gdb, qemu):
     print("XV6 shell is ready.")
     time.sleep(0.5)
     
-    # Run the trap_test program
-    print("--- Running trap_test to trigger kernel panic ---")
-    qemu.sendline("trap_test")
+    # Run the test program
+    print(f"--- Running {test_program} to trigger kernel panic ---")
+    qemu.sendline(test_program)
     time.sleep(0.5)
     
     # Wait for breakpoint hit
@@ -196,7 +226,7 @@ def run_kernel_debugger(gdb, qemu):
     if index == 2:  # TIMEOUT
         print("⚠️ Breakpoint was not hit within timeout.")
         print("GDB output:", gdb.before)
-        raise Exception("trap_test did not trigger expected page fault")
+        raise Exception(f"{test_program} did not trigger expected page fault")
     
     print("✅ GDB HIT BREAKPOINT at vectors.S:56!")
     
@@ -326,12 +356,15 @@ DISASSEMBLY OF CALLING FUNCTION:
         print(f"  make")
         print(f"\nThen test the fix:")
         print(f"  make qemu-nox")
-        print(f"  $ trap_test")
+        print(f"  $ {test_program}")
 
 
-def run_user_debugger(gdb, qemu):
+def run_user_debugger(gdb, qemu, test_program="user_crash"):
     """Handles user-space crash debugging by monitoring console output"""
-    print("\n--- Running in USER-SPACE CRASH MODE ---")
+    print(f"\n--- Running in USER-SPACE CRASH MODE ---")
+    print(f"Test Program: {test_program}")
+    print(f"Description: {USER_TESTS[test_program]['description']}")
+    print(f"Expected: {USER_TESTS[test_program]['expected_trap']}")
     
     # Continue execution
     print("--- Booting kernel and waiting for shell prompt ---")
@@ -343,9 +376,9 @@ def run_user_debugger(gdb, qemu):
     print("XV6 shell is ready.")
     time.sleep(0.5)
     
-    # Run the user_crash program
-    print("--- Running user_crash to trigger user-space fault ---")
-    qemu.sendline("user_crash")
+    # Run the test program
+    print(f"--- Running {test_program} to trigger user-space fault ---")
+    qemu.sendline(test_program)
     
     # Wait for crash report
     try:
@@ -363,7 +396,6 @@ def run_user_debugger(gdb, qemu):
             
             # Extract RIP from crash report to find exact source code
             rip_match = re.search(r'RIP:\s+([0-9a-fA-Fx]+)', crash_report)
-            program_name = "user_crash"  # We know the program name
             
             if rip_match:
                 rip_addr = rip_match.group(1)
@@ -381,14 +413,11 @@ def run_user_debugger(gdb, qemu):
                     pass
                 
                 # Load the user program symbols
-                print(f"Loading user program symbols: _{program_name}...")
-                gdb.sendline(f"file _{program_name}")
+                print(f"Loading user program symbols: _{test_program}...")
+                gdb.sendline(f"file _{test_program}")
                 
                 # GDB asks TWO questions when changing files
-                # First: "Are you sure you want to change the file?"
-                # Second: "Load new symbol table from ...?"
-                
-                for i in range(2):  # Handle up to 2 prompts
+                for i in range(2):
                     index = gdb.expect([
                         r"Are you sure you want to change the file",
                         r"Load new symbol table from",
@@ -396,12 +425,12 @@ def run_user_debugger(gdb, qemu):
                         pexpect.TIMEOUT
                     ], timeout=3)
                     
-                    if index == 0 or index == 1:  # GDB is asking for confirmation
+                    if index == 0 or index == 1:
                         print(f"  Confirming prompt {i+1}...")
                         gdb.sendline("y")
-                    elif index == 2:  # Got prompt, we're done
+                    elif index == 2:
                         break
-                    elif index == 3:  # Timeout
+                    elif index == 3:
                         print(f"  Warning: Timeout on prompt {i+1}, continuing...")
                         break
                 
@@ -475,15 +504,11 @@ DISASSEMBLY:
                 # Extract the core fix recommendation for manual application
                 fix_summary = f"""
 MANUAL FIX INSTRUCTIONS:
-File: user_crash.c
-Line: {analysis.get('faultyLine', 'around line 14')}
+File: {test_program}.c
+Line: {analysis.get('faultyLine', 'see above')}
 Problem: {analysis['rootCause']}
 
-Quick Fix - Add this check BEFORE the division:
-  if (y == 0) {{
-    printf(1, "Error: Division by zero!\\n");
-    exit(1);
-  }}
+Quick Fix - Add defensive check BEFORE the faulty operation
 """
                 
                 # Save patch
@@ -499,10 +524,13 @@ Quick Fix - Add this check BEFORE the division:
                 print("\n" + "="*80)
                 print("APPLY THE FIX")
                 print("="*80)
-                print(f"Option 1 - Try automatic patch:")
+                print(f"To apply this patch and rebuild:")
                 print(f"  patch -p1 < {patch_filename}")
-                print(f"  (then run: make)")
-                print(f"\nOption 2 - Manual fix (if patch fails):")
+                print(f"  make")
+                print(f"\nThen test the fix:")
+                print(f"  make qemu-nox")
+                print(f"  $ {test_program}")
+                print(f"\nOr manual fix (if patch fails):")
                 print(fix_summary)
         else:
             print("⚠️ No user crash report detected within timeout.")
@@ -514,8 +542,27 @@ Quick Fix - Add this check BEFORE the division:
         traceback.print_exc()
 
 
-def run_debugger(mode="kernel"):
+def run_debugger(mode="kernel", test_program=None):
     """Main debugger orchestration function"""
+    
+    # Select test program
+    if test_program is None:
+        if mode == "kernel":
+            test_program = random.choice(list(KERNEL_TESTS.keys()))
+        else:
+            test_program = random.choice(list(USER_TESTS.keys()))
+        print(f"\n🎲 Randomly selected test: {test_program}")
+    
+    # Validate test program exists
+    if mode == "kernel" and test_program not in KERNEL_TESTS:
+        print(f"❌ Unknown kernel test: {test_program}")
+        print(f"Available tests: {', '.join(KERNEL_TESTS.keys())}")
+        return
+    elif mode == "user" and test_program not in USER_TESTS:
+        print(f"❌ Unknown user test: {test_program}")
+        print(f"Available tests: {', '.join(USER_TESTS.keys())}")
+        return
+    
     gdb = None
     qemu = None
     qemu_log = None
@@ -545,7 +592,7 @@ def run_debugger(mode="kernel"):
     time.sleep(3)
     
     try:
-        # 4. Start GDB and connect (needed even for user-space to control QEMU)
+        # 4. Start GDB and connect
         print(f"--- 4. Starting GDB ({GDB_COMMAND}) and connecting to QEMU ---")
         gdb = pexpect.spawn(f"{GDB_COMMAND} kernel", encoding="utf-8", timeout=60)
         
@@ -580,9 +627,9 @@ def run_debugger(mode="kernel"):
         
         # Route to appropriate debugger
         if mode == "kernel":
-            run_kernel_debugger(gdb, qemu)
+            run_kernel_debugger(gdb, qemu, test_program)
         else:  # user mode
-            run_user_debugger(gdb, qemu)
+            run_user_debugger(gdb, qemu, test_program)
 
     except pexpect.exceptions.EOF:
         print("\n❌ QEMU/GDB closed unexpectedly.")
@@ -627,12 +674,31 @@ def run_debugger(mode="kernel"):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='xv6 AI-Powered Debugger')
     parser.add_argument('--mode', choices=['kernel', 'user'], default='kernel',
-                        help='Debugging mode: kernel (trap_test) or user (user_crash)')
+                        help='Debugging mode: kernel or user')
+    parser.add_argument('--test', type=str, default=None,
+                        help='Specific test program to run (default: random)')
+    parser.add_argument('--list', action='store_true',
+                        help='List all available test programs')
     
     args = parser.parse_args()
+    
+    if args.list:
+        print("\n" + "="*80)
+        print("AVAILABLE TEST PROGRAMS")
+        print("="*80)
+        print("\nKernel Tests:")
+        for name, info in KERNEL_TESTS.items():
+            print(f"  {name:20} - {info['description']}")
+        print("\nUser Tests:")
+        for name, info in USER_TESTS.items():
+            print(f"  {name:20} - {info['description']}")
+        print("\nUsage:")
+        print("  python3 debugger.py --mode user --test null_deref")
+        print("  python3 debugger.py --mode kernel  # random test")
+        sys.exit(0)
     
     print(f"\n{'='*80}")
     print(f"xv6 AI-POWERED DEBUGGER - {args.mode.upper()} MODE")
     print(f"{'='*80}")
     
-    run_debugger(mode=args.mode)
+    run_debugger(mode=args.mode, test_program=args.test)
