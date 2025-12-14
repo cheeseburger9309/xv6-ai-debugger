@@ -1,39 +1,44 @@
+```markdown
 # xv6 AI-Powered Debugger
 
-An automated kernel debugging tool that uses GDB, QEMU, and Google Gemini AI to analyze xv6 kernel panics with pinpoint accuracy - identifying the exact source file, function, and line number that caused the crash.
+An automated debugging tool that uses GDB, QEMU, and Google Gemini AI to analyze xv6 crashes with pinpoint accuracy - identifying the exact source file, function, and line number that caused the fault.
 
 ## Key Features
 
-- **AI-Powered Root Cause Analysis** - Uses Google Gemini 2.5 Flash for intelligent crash analysis
-- **Precise Bug Location** - Identifies exact file, function, and line number causing the fault
+- **Dual-Mode Debugging** - Supports both kernel-space and user-space crash analysis
+- **AI-Powered Root Cause Analysis** - Uses Google Gemini 2.5 Flash for intelligent diagnosis
+- **Precise Bug Location** - Identifies exact file, function, and line number
 - **Automated Patch Generation** - Creates unified diff patches ready for application
+- **Multiple Test Programs** - Includes 5 test cases covering different fault types
+- **Random Test Selection** - Automatically picks tests or run specific ones
 - **Comprehensive State Capture** - Backtrace, registers, source code, and disassembly
-- **Fully Automated Pipeline** - From crash to fix suggestion in seconds
-- **Severity Assessment** - Classifies bugs as High/Medium/Low priority
 
 ## What Makes This Unique
 
-Unlike traditional debuggers that just show you a crash location, this tool:
-- **Analyzes the entire context** including assembly instructions and register states
-- **Explains WHY the crash happened** in plain English
-- **Generates specific, actionable patches** with exact line numbers
-- **Saves hours of manual debugging** by automating the entire analysis pipeline
+Unlike traditional debuggers that just show crash locations, this tool:
+
+- Analyzes the entire context including assembly instructions and register states
+- Explains WHY the crash happened in plain English
+- Generates specific, actionable patches with exact line numbers
+- Works for both kernel panics and user-space crashes
 
 ## Prerequisites
 
-- **Python 3.8+**
-- **QEMU** (`qemu-system-x86_64`)
-- **Cross-compiler GDB** (`x86_64-elf-gdb`)
-- **xv6 operating system** source code
-- **Google Gemini API key** (free tier available)
+- Python 3.8+
+- QEMU (`qemu-system-x86_64`)
+- Cross-compiler GDB (`x86_64-elf-gdb`)
+- xv6 operating system source code
+- Google Gemini API key (free tier available)
 
 ### macOS Installation
+
 ```bash
 brew install qemu
 brew install x86_64-elf-gdb
 ```
 
 ### Linux Installation
+
 ```bash
 # Ubuntu/Debian
 sudo apt-get install qemu-system-x86 gdb-multiarch
@@ -66,242 +71,211 @@ pip install -r requirements.txt
    - Sign in and create a new API key
    - Copy the key
 
-5. **Configure API key** (Choose one method)
-
-   **Option A: Environment Variable (Recommended)**
+5. **Configure API key**
 ```bash
-   export GEMINI_API_KEY="your-api-key-here"
-```
-
-   **Option B: Direct Configuration**
-   Edit `debugger.py` and set:
-```python
-   API_KEY = "your-api-key-here"
+export GEMINI_API_KEY="your-api-key-here"
 ```
 
 ## Usage
 
-### Basic Usage
+### List Available Tests
+
 ```bash
-python3 debugger.py
+python3 debugger.py --list
 ```
 
-The debugger will automatically:
-1. Build xv6 and test programs
-2. Start QEMU with GDB stub (port 26000)
-3. Set breakpoints at fault handlers
-4. Run the test program (`trap_test`)
-5. Capture complete system state when panic occurs
-6. Analyze with AI and generate fix
-7. Save patch to `suggested_fix.patch`
-
-### Expected Output
+Output:
 ```
---- 1. Cleaning up QEMU processes ---
---- 2. Building xv6 and test program (trap_test) ---
---- 3. Starting QEMU (GDB port: 26000) ---
---- 4. Starting GDB (x86_64-elf-gdb) and connecting to QEMU ---
-Disabling GDB pagination...
-Breakpoint set at vectors.S:56 (Page Fault Handler).
---- 5. Running kernel and waiting for shell prompt ---
-XV6 shell is ready.
---- 6. Running trap_test to trigger the panic ---
-GDB HIT BREAKPOINT at vectors.S:56!
-Capturing backtrace...
-Backtrace captured (122 chars)
-Capturing registers...
-Registers captured (5262 chars)
-Capturing source code context...
-Found calling address: 0xffff800000109418
-Source context captured - Caller: sys_triggerpanic + 50 in section .text
+Kernel Tests:
+  trap_test            - NULL pointer dereference in kernel space
 
+User Tests:
+  user_crash           - Division by zero
+  null_deref           - NULL pointer dereference
+  invalid_pointer      - Invalid memory address access
+  invalid_instruction  - Invalid/undefined instruction
+```
+
+### Run Debugger
+
+**Random test selection:**
+```bash
+python3 debugger.py --mode user    # Random user-space test
+python3 debugger.py --mode kernel  # Random kernel test
+```
+
+**Specific test:**
+```bash
+python3 debugger.py --mode user --test null_deref
+python3 debugger.py --mode user --test user_crash
+python3 debugger.py --mode kernel --test trap_test
+```
+
+### Example Output
+
+```
 ================================================================================
-AI-ASSISTED ROOT CAUSE ANALYSIS
+AI-ASSISTED ROOT CAUSE ANALYSIS (USER-SPACE)
 ================================================================================
-Root Cause: NULL pointer dereference (memory access to address 0x0)
-Faulty Function: sys_triggerpanic
-Faulty Line: sysproc.c:96, volatile int val = *p;
+Root Cause: NULL pointer dereference
+Trap Type: Trap 14 (Page Fault)
+Faulty Program: null_deref
+Faulty Line: null_deref.c:9: int value = *ptr;
 Severity: High
 
-Analysis Summary:
-The page fault occurred because the instruction at 0xffff800000109418 attempted 
-to access memory at address 0x0. The disassembly shows \`mov (%rax), %eax\` with 
-RAX holding 0x0, explicitly demonstrating NULL pointer dereferencing.
+Explanation:
+The program explicitly initializes pointer 'ptr' to 0 (NULL) and then
+attempts to dereference it on line 9, causing a page fault.
 
 Suggested Fix/Patch:
---- a/sysproc.c
-+++ b/sysproc.c
-@@ -93,10 +93,8 @@
- addr_t sys_triggerpanic(void)
- {
-   cprintf("Kernel: Attempting to trigger controlled panic...\n");
--  int *p = (int *)0;
--  volatile int val = *p;
-+  cprintf("Kernel: Controlled panic averted, returning safely.\n");
-   return 0;
- }
+--- a/null_deref.c
++++ b/null_deref.c
+@@ -6,8 +6,12 @@
+   printf(1, "null_deref: Testing NULL pointer dereference...\n");
+   
+   int *ptr = 0;  // NULL pointer
+-  int value = *ptr;  // Dereference NULL
++  int value;
++  if (ptr == 0) {
++    printf(2, "ERROR: Attempted to dereference NULL pointer.\n");
++    exit();
++  }
++  value = *ptr;
 
-Patch saved to: suggested_fix.patch
+Patch saved to: user_space_fix.patch
+```
+
+### Apply Generated Patch
+
+```bash
+patch -p1 < user_space_fix.patch
+make
 ```
 
 ## Project Structure
+
 ```
 xv6-ai-debugger/
-├── debugger.py          # Main debugger script with GDB automation
-├── requirements.txt     # Python dependencies (pexpect, requests)
-├── README.md           # This file
-├── .gitignore          # Git ignore rules (excludes .venv, API keys)
-├── suggested_fix.patch # Auto-generated patch file (created at runtime)
-└── qemu_output.log     # QEMU output log (created at runtime)
+├── debugger.py              # Main debugger script
+├── requirements.txt         # Python dependencies (pexpect, requests)
+├── README.md               # This file
+├── .gitignore              # Git ignore rules
+├── suggested_fix.patch     # Kernel patch (generated at runtime)
+├── user_space_fix.patch    # User patch (generated at runtime)
+└── qemu_output.log         # QEMU output (generated at runtime)
+```
+
+## Test Programs
+
+You need to add these test programs to your xv6 repository:
+
+**user_crash.c** - Division by zero
+**null_deref.c** - NULL pointer dereference
+**invalid_pointer.c** - Invalid memory address
+**invalid_instruction.c** - Undefined opcode
+**trap_test.c** - Kernel panic (already exists)
+
+Add to your xv6 Makefile UPROGS:
+```makefile
+UPROGS=\
+    ... (existing programs) ...
+    _trap_test\
+    _user_crash\
+    _null_deref\
+    _invalid_pointer\
+    _invalid_instruction\
+```
+
+Add to xv6 trap.c (for user-space crash reporting):
+```c
+// In trap.c, inside trap(), in the default case:
+default:
+    if(proc == 0 || (tf->cs&3) == 0){
+      // kernel fault
+      cprintf("unexpected trap %d...\n", tf->trapno);
+      panic("trap");
+    }
+    
+    // User-space crash reporting
+    cprintf("\n=== XV6 USER CRASH REPORT ===\n");
+    cprintf("Process: %s (pid %d)\n", proc->name, proc->pid);
+    cprintf("Trap: %d (Error: %d)\n", tf->trapno, tf->err);
+    cprintf("RIP: %p RSP: %p\n", tf->rip, tf->rsp);
+    cprintf("RAX: %p RBX: %p RCX: %p RDX: %p\n", tf->rax, tf->rbx, tf->rcx, tf->rdx);
+    cprintf("RDI: %p RSI: %p RBP: %p\n", tf->rdi, tf->rsi, tf->rbp);
+    cprintf("=== END REPORT ===\n");
+    
+    // Existing code continues...
 ```
 
 ## How It Works
 
-### 1. Automated GDB-QEMU Orchestration
-- Spawns QEMU with GDB remote debugging stub
-- Connects GDB and disables pagination for automation
-- Sets intelligent breakpoints at kernel fault handlers
-
-### 2. Comprehensive State Capture
-When a fault occurs, the system captures:
-- **Call stack** (backtrace)
-- **CPU registers** (RAX, RBX, RIP, CR2, etc.)
-- **Saved return addresses** (to trace back to calling function)
-- **Source code context** at the fault location
-- **Disassembly** of the faulting function
-- **Stack frame analysis**
-
-### 3. AI-Powered Analysis
-The captured data is sent to Google Gemini with a structured prompt requesting:
-- Root cause identification
-- Exact file, function, and line number
-- Technical explanation of why the crash occurred
-- Specific code patch in unified diff format
-
-### 4. Patch Generation
-The AI generates a ready-to-apply patch that can be used with:
-```bash
-patch -p1 < suggested_fix.patch
-```
-
-## Educational Value
-
-This tool is perfect for:
-- **Operating Systems courses** - Teaching kernel debugging techniques
-- **Systems Programming** - Understanding low-level fault handling
-- **AI Integration** - Demonstrating practical LLM applications
-- **Automation** - Learning process orchestration with Python
+1. **GDB-QEMU Orchestration** - Spawns QEMU with GDB stub, connects, and sets breakpoints
+2. **State Capture** - When fault occurs, captures backtrace, registers, and source code
+3. **AI Analysis** - Sends data to Gemini with structured prompts requesting root cause and fix
+4. **Patch Generation** - AI returns unified diff patch ready for application
 
 ## Supported Fault Types
 
-Currently tested and working:
-- NULL pointer dereferences
-- Page faults (vector 14)
-- Invalid memory access
+**Currently implemented:**
+- NULL pointer dereferences (kernel and user)
+- Division by zero (user)
+- Invalid memory access (user)
+- Invalid opcodes (user)
+- Page faults (both)
 
-Planned support:
-- Stack overflow detection
-- Divide-by-zero faults
-- Double faults
-- General protection faults
+## Configuration
 
-## Contributing
-
-Contributions are welcome! Here's how you can help:
-
-1. **Add more test cases** for different fault types
-2. **Improve source code analysis** accuracy
-3. **Add support for other architectures** (ARM, RISC-V)
-4. **Create a web dashboard** for team collaboration
-5. **Implement automatic patch testing**
-
-### Development Setup
-```bash
-# Fork the repo and clone your fork
-git clone https://github.com/YOUR_USERNAME/xv6-ai-debugger.git
-
-# Create a feature branch
-git checkout -b feature/your-feature-name
-
-# Make your changes and test
-python3 debugger.py
-
-# Commit and push
-git commit -am "Add your feature"
-qgit push origin feature/your-feature-name
-
-# Open a Pull Request
-```
-
-## Configuration Options
-
-### Customizing GDB Port
+**Change GDB port:**
 ```python
 # In debugger.py
-GDB_PORT = 26000  # Change to your preferred port
+GDB_PORT = 26000
 ```
 
-### Using a Different GDB Binary
+**Use different GDB binary:**
 ```python
 # In debugger.py
-GDB_COMMAND = "gdb-multiarch"  # For Linux systems
-```
-
-### Adjusting API Timeout
-```python
-# In debugger.py, get_gemini_analysis function
-response = requests.post(url, headers=headers, json=payload, timeout=60)
+GDB_COMMAND = "gdb-multiarch"  # For Linux
 ```
 
 ## Troubleshooting
 
-### "Connection refused" error
+**"Connection refused" error**
 - Ensure no other process is using port 26000
-- Check that QEMU is properly installed: \`which qemu-system-x86_64\`
+- Check QEMU is installed: `which qemu-system-x86_64`
 
-### "x86_64-elf-gdb: command not found"
-- Install the cross-compiler GDB: \`brew install x86_64-elf-gdb\`
-- Or use \`gdb-multiarch\` on Linux systems
+**"x86_64-elf-gdb: command not found"**
+- Install: `brew install x86_64-elf-gdb` (macOS)
+- Or use: `gdb-multiarch` (Linux)
 
-### API returns 400 errors
-- Verify your API key is valid at [Google AI Studio](https://aistudio.google.com/)
-- Check your API quota hasn't been exceeded
-- Ensure you're using Gemini 2.5 Flash (not preview versions)
+**API returns 400 errors**
+- Verify API key at [Google AI Studio](https://aistudio.google.com/)
+- Check API quota hasn't been exceeded
 
-### QEMU reboots unexpectedly
-- This usually means the automation lost synchronization
-- Check the \`qemu_output.log\` file for details
-- Ensure you're using the latest version of the debugger
+**No crash detected**
+- Ensure test program is in xv6 Makefile UPROGS
+- Verify trap.c modifications for user-space reporting
+- Run `make clean && make` to rebuild
 
 ## Performance
 
-- **Average analysis time**: 3-5 seconds
-- **Success rate**: >95% for common kernel panics
-- **API cost**: ~$0.001 per analysis (free tier: 60 requests/minute)
+- Average analysis time: 3-5 seconds
+- Success rate: >95% for common crashes
+- API cost: ~$0.001 per analysis (free tier: 60 requests/minute)
 
 ## Security Notes
 
-- **Never commit your API key** to version control
-- The \`.gitignore\` file excludes \`.env\` and \`*.key\` files
-- Use environment variables for production deployments
-- Review generated patches before applying to production code
+- Never commit your API key to version control
+- Use environment variables for API key
+- Review generated patches before applying
 
 ## License
 
-MIT License - See LICENSE file for details
+MIT License
 
 ## Acknowledgments
 
-- **xv6** - MIT's teaching operating system
-- **Google Gemini** - AI-powered analysis engine
-- **pexpect** - Process automation library
-- The OS development community for invaluable debugging insights
-
-## Support
-
-- **Issues**: [GitHub Issues](https://github.com/cheeseburger9309/xv6-ai-debugger/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/cheeseburger9309/xv6-ai-debugger/discussions)
-
----
-
-Built for the systems programming community
+- xv6 - MIT's teaching operating system
+- Google Gemini - AI-powered analysis
+- pexpect - Process automation library
+```
