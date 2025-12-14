@@ -277,4 +277,3 @@ MIT License
 - xv6 - MIT's teaching operating system
 - Google Gemini - AI-powered analysis
 - pexpect - Process automation library
-```
