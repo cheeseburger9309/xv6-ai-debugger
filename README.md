@@ -1,4 +1,3 @@
-```markdown
 # xv6 AI-Powered Debugger
 
 An automated debugging tool that uses GDB, QEMU, and Google Gemini AI to analyze xv6 crashes with pinpoint accuracy - identifying the exact source file, function, and line number that caused the fault.
