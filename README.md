@@ -50,7 +50,7 @@ sudo pacman -S qemu gdb
 
 1. **Clone this repository**
 ```bash
-git clone https://github.com/yourusername/xv6-ai-debugger.git
+git clone https://github.com/cheeseburger9309/xv6-ai-debugger.git
 cd xv6-ai-debugger
 ```
 
