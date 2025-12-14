@@ -1,23 +1,21 @@
 # AI-Generated Patch for xv6 Kernel Panic
-# Root Cause: NULL pointer dereference (memory access to address 0x0)
+# Root Cause: NULL pointer dereference
 # Faulty Function: sys_triggerpanic
-# Faulty Line: sysproc.c:96, volatile int val = *p;
+# Faulty Line: sysproc.c:96: volatile int val = *p;
 # Severity: High
 
 --- a/sysproc.c
 +++ b/sysproc.c
-@@ -93,10 +93,8 @@
+@@ -93,9 +93,9 @@
  addr_t sys_triggerpanic(void)
  {
    cprintf("Kernel: Attempting to trigger controlled panic by dereferencing NULL...\n");
 -  // The line that causes the page fault
 -  int *p = (int *)0;
 -  volatile int val = *p; // Use volatile to ensure compiler doesn't optimize it away
--  
--  // This line should never be reached in the controlled panic test:
--  cprintf("Kernel: Should not reach here. Value: %d\n", val);
-+  // The controlled panic mechanism (NULL dereference) has been removed.
-+  // This function now returns safely without triggering a fault.
-+  cprintf("Kernel: Controlled panic averted, returning safely.\n");
-   return 0; // Returns addr_t (which is fine for returning 0)
- }
++  // The following lines were intentionally designed to trigger a kernel panic for testing purposes.
++  // To prevent the page fault, the dereference of a NULL pointer has been removed.
++  volatile int val = 0; // Initialize 'val' to a safe default value if the panic is no longer desired.
+   
+   // This line should never be reached in the controlled panic test:
+   cprintf("Kernel: Should not reach here. Value: %d\n", val);

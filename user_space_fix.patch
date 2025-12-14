@@ -1,0 +1,23 @@
+--- a/user_crash.c
++++ b/user_crash.c
+@@ -11,7 +11,13 @@
+ 
+   // Use inline assembly to prevent compiler from optimizing this away
+   // equivalent to: z = x / y;
+-  asm volatile("div %2" 
+-               : "=a" (z) 
+-               : "a" (x), "r" (y) 
+-               : "rdx"); 
++  if (y == 0) {
++    // Handle division by zero error
++    printf("Error: Division by zero is not allowed.\n");
++    exit(1);
++  } else {
++    asm volatile("div %2" 
++                 : "=a" (z) 
++                 : "a" (x), "r" (y) 
++                 : "rdx"); 
++  }
+ 
+   printf("Result of division: %d\n", z);
+   exit(0);

@@ -228,7 +228,7 @@ python3 debugger.py
 
 # Commit and push
 git commit -am "Add your feature"
-git push origin feature/your-feature-name
+qgit push origin feature/your-feature-name
 
 # Open a Pull Request
 ```

@@ -87,6 +87,18 @@ trap(struct trapframe *tf)
         cprintf("proc id: %d\n", proc->pid);
       panic("trap");
     }
+    
+    cprintf("\n=== XV6 USER CRASH REPORT ===\n");
+    cprintf("Process: %s (pid %d)\n", proc->name, proc->pid);
+    cprintf("Trap: %d (Error: %d)\n", tf->trapno, tf->err);
+    // Use %p for 64-bit registers (it automatically adds 0x prefix)
+    cprintf("RIP: %p RSP: %p\n", tf->rip, tf->rsp);
+    cprintf("RAX: %p RBX: %p RCX: %p RDX: %p\n", 
+            tf->rax, tf->rbx, tf->rcx, tf->rdx);
+    cprintf("RDI: %p RSI: %p RBP: %p\n", 
+            tf->rdi, tf->rsi, tf->rbp);
+    cprintf("=== END REPORT ===\n");    
+
     // In user space, assume process misbehaved.
     cprintf("pid %d %s: trap %d err %d on cpu %d "
             "rip 0x%p addr 0x%p--kill proc\n",

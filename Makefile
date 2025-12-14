@@ -118,7 +118,8 @@ mkfs: mkfs.c fs.h
 
 UPROGS= \
 	_cat _echo _forktest _grep _init _kill _ln _ls _mkdir \
-	_rm _sh _stressfs _usertests _wc _zombie _trap_test \
+	_rm _sh _stressfs _usertests _wc _zombie _trap_test _user_crash _null_deref \
+	_buffer_overflow _invalid_instruction \
 #
 
 fs.img: mkfs README $(UPROGS)
